@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+.venv/
+venv/
+env/
+
+.env
+*.log
+
+# Large or machine-local datasets.
+data/raw/
+data/example_json_output/
+data/generated/
+
+# Keep lightweight placeholders if you choose to add them later.
+!data/.gitkeep
+!data/**/.gitkeep
