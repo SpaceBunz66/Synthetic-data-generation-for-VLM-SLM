@@ -104,17 +104,32 @@ python scripts/generate_synthetic_dataset.py `
   --blocks-per-sample 5
 ```
 
+Dense mode for harder VLM/OCR samples:
+
+```powershell
+python scripts/generate_synthetic_dataset.py `
+  --output data/generated/synthetic_dense `
+  --count 100 `
+  --seed 2026 `
+  --clean `
+  --difficulty dense
+```
+
 Option chính:
 
 - `--count`: số ảnh cần sinh.
 - `--seed`: seed deterministic.
 - `--clean`: xóa output cũ trước khi sinh lại.
 - `--no-augment`: tắt augmentation để debug dễ hơn.
+- `--difficulty normal|dense`: `normal` giữ layout cũ; `dense` dùng layout procedural dày hơn với nhiều text/bbox hơn.
 - `--game-renderer auto|playwright|pillow`: `auto` thử Playwright trước, fallback Pillow.
-- `--blocks-per-sample`: số block text semantic trước khi wrap thành line-level bbox.
+- `--blocks-per-sample`: số block text semantic trước khi wrap thành line-level bbox; mặc định là 5 cho `normal`, 12 cho `dense`.
 - `--content-provider fallback|gemini|groq|openai`: nguồn sinh text.
 - `--content-model`: model API muốn dùng.
 - `--api-timeout`: timeout cho API call.
+
+`dense` vẫn giữ annotation chuẩn xác bằng cách render procedural bằng Pillow/HTML, không dùng diffusion/text-to-image.
+Manga dùng nhiều layout panel bất đối xứng, panel-local scan/screentone noise và procedural panel art như nhân vật, cảnh nền, vật thể, dáng hành động được đặt tránh bubble text; game dùng nhiều scene style như dialogue screenshot, floating nameplates, crafting/menu và HUD overlay.
 
 ## 5. Dùng Gemini Hoặc Groq
 
@@ -149,7 +164,7 @@ Nếu thiếu key hoặc API lỗi, pipeline không dừng hẳn. Nó fallback s
 Default generator áp dụng các rule:
 
 - Một ảnh chỉ có một source language.
-- Chỉ dùng `en`, `ja`, `zh`.
+- Chỉ dùng source language `en`; `translated_text` vẫn là bản dịch tiếng Việt.
 - Không sinh SFX/action-word như boom, bang, crash, rầm, ầm.
 - Manga chỉ dùng speech/narration, không có quest/HUD/menu.
 - Game dùng RPG UI/dialog/HUD/menu/floating label.

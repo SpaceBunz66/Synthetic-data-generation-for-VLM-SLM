@@ -21,6 +21,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--clean", action="store_true", help="Delete the output directory before generation.")
     parser.add_argument("--no-augment", action="store_true", help="Disable image augmentation.")
+    parser.add_argument(
+        "--difficulty",
+        choices=("normal", "dense"),
+        default="normal",
+        help="Use dense to render busier scenes with more visible text regions.",
+    )
     parser.add_argument("--use-llm", action="store_true", help="Backward-compatible shortcut for API content generation.")
     parser.add_argument("--llm-model", default=None, help="Backward-compatible model override.")
     parser.add_argument(
@@ -41,7 +47,12 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Use Playwright for game UI when available; auto falls back to Pillow.",
     )
-    parser.add_argument("--blocks-per-sample", type=int, default=5)
+    parser.add_argument(
+        "--blocks-per-sample",
+        type=int,
+        default=None,
+        help="Semantic text blocks per image. Defaults to 5 for normal and 12 for dense.",
+    )
     return parser.parse_args()
 
 
@@ -60,6 +71,7 @@ def main() -> None:
         api_timeout=args.api_timeout,
         game_renderer=args.game_renderer,
         blocks_per_sample=args.blocks_per_sample,
+        difficulty=args.difficulty,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

@@ -16,8 +16,8 @@ from typing import Any, Dict, List, Optional
 from synthetic_data.schema import TextBlock
 
 
-CONTENT_SCHEMA_VERSION = "content_v4_rich_en_ja_zh_api_routes"
-LANGUAGES = ("en", "ja", "zh")
+CONTENT_SCHEMA_VERSION = "content_v5_rich_en_only_api_routes"
+LANGUAGES = ("en",)
 
 CONTENT_PROVIDERS = ("fallback", "openai", "gemini", "groq")
 
@@ -393,10 +393,10 @@ class ContentProvider:
     def _compose_manga(self, language: str, kind: str, rng: random.Random) -> Dict[str, str]:
         banks = {
             "en": {
-                "names": [("Mira", "Mira"), ("Ren", "Ren"), ("Aki", "Aki"), ("Sora", "Sora"), ("Lena", "Lena"), ("Noah", "Noah")],
-                "places": [("the old bridge", "cây cầu cũ"), ("the empty classroom", "lớp học trống"), ("the shrine gate", "cổng đền"), ("the rainy alley", "con hẻm mưa"), ("the last train", "chuyến tàu cuối")],
-                "objects": [("sealed letter", "lá thư bị niêm phong"), ("silver hairpin", "chiếc kẹp tóc bạc"), ("broken charm", "lá bùa vỡ"), ("missing photograph", "tấm ảnh thất lạc"), ("blue ribbon", "dải ruy băng xanh")],
-                "feelings": [("afraid", "sợ hãi"), ("angry", "tức giận"), ("lonely", "cô đơn"), ("relieved", "nhẹ nhõm"), ("ashamed", "xấu hổ")],
+                "names": [("Mira", "Mira"), ("Ren", "Ren"), ("Aki", "Aki"), ("Sora", "Sora"), ("Lena", "Lena"), ("Noah", "Noah"), ("Yuna", "Yuna"), ("Kai", "Kai")],
+                "places": [("the old bridge", "cây cầu cũ"), ("the empty classroom", "lớp học trống"), ("the shrine gate", "cổng đền"), ("the rainy alley", "con hẻm mưa"), ("the last train", "chuyến tàu cuối"), ("the rooftop garden", "khu vườn sân thượng"), ("the river stairs", "bậc thang ven sông")],
+                "objects": [("sealed letter", "lá thư bị niêm phong"), ("silver hairpin", "chiếc kẹp tóc bạc"), ("broken charm", "lá bùa vỡ"), ("missing photograph", "tấm ảnh thất lạc"), ("blue ribbon", "dải ruy băng xanh"), ("glass pendant", "mặt dây chuyền thủy tinh"), ("school notebook", "quyển vở học")],
+                "feelings": [("afraid", "sợ hãi"), ("angry", "tức giận"), ("lonely", "cô đơn"), ("relieved", "nhẹ nhõm"), ("ashamed", "xấu hổ"), ("confused", "bối rối"), ("hopeful", "đầy hy vọng")],
             },
             "ja": {
                 "names": [("ミラ", "Mira"), ("レン", "Ren"), ("アキ", "Aki"), ("ソラ", "Sora"), ("レナ", "Lena"), ("ノア", "Noah")],
@@ -426,18 +426,23 @@ class ContentProvider:
                     ("{name}, I found the {object} near {place}.", "{name}, tôi đã tìm thấy {object_vi} gần {place_vi}."),
                     ("You hid the {object} from me, didn't you?", "Cậu đã giấu {object_vi} khỏi tôi, đúng không?"),
                     ("I saw {name} waiting at {place}.", "Tôi thấy {name} đang đợi ở {place_vi}."),
+                    ("The {object} belongs to {name}, not me.", "{object_vi} thuộc về {name}, không phải tôi."),
+                    ("We promised to meet at {place}.", "Chúng ta đã hứa gặp nhau ở {place_vi}."),
                 ],
                 "whisper": [
                     ("Keep your voice down. {name} is still here.", "Nói nhỏ thôi. {name} vẫn còn ở đây."),
                     ("I was {feeling}, but I came anyway.", "Tôi đã {feeling_vi}, nhưng vẫn đến."),
+                    ("Hide the {object} before {name} returns.", "Hãy giấu {object_vi} trước khi {name} quay lại."),
                 ],
                 "shout": [
                     ("{name}, don't touch the {object}!", "{name}, đừng chạm vào {object_vi}!"),
                     ("Tell me why you went to {place}!", "Nói cho tôi biết vì sao cậu đến {place_vi}!"),
+                    ("Give the {object} back to {name}!", "Trả {object_vi} lại cho {name}!"),
                 ],
                 "narration": [
                     ("That night, {name} returned to {place} alone.", "Đêm đó, {name} một mình quay lại {place_vi}."),
                     ("The {object} was colder than I remembered.", "{object_vi} lạnh hơn tôi nhớ."),
+                    ("By sunrise, {place} felt different.", "Đến bình minh, {place_vi} đã khác trước."),
                 ],
             },
             "ja": {
@@ -485,10 +490,10 @@ class ContentProvider:
     def _compose_game(self, language: str, kind: str, rng: random.Random) -> Dict[str, str]:
         banks = {
             "en": {
-                "places": [("north gate", "cổng bắc"), ("moonlit dock", "bến tàu dưới trăng"), ("crystal mine", "mỏ pha lê"), ("western tower", "tháp phía tây"), ("forest camp", "trại trong rừng")],
-                "items": [("ancient sigil", "ấn ký cổ"), ("storm key", "chìa khóa bão tố"), ("healing herb", "thảo dược hồi phục"), ("silver compass", "la bàn bạc"), ("ember shard", "mảnh than hồng")],
-                "npcs": [("Captain Rhea", "đội trưởng Rhea"), ("Archivist Noll", "thủ thư Noll"), ("Merchant Vale", "thương nhân Vale"), ("Scout Ilya", "trinh sát Ilya")],
-                "skills": [("Frost Guard", "Khiên băng"), ("Quick Step", "Bước nhanh"), ("Mana Bloom", "Nở mana"), ("Iron Focus", "Tập trung thép")],
+                "places": [("north gate", "cổng bắc"), ("moonlit dock", "bến tàu dưới trăng"), ("crystal mine", "mỏ pha lê"), ("western tower", "tháp phía tây"), ("forest camp", "trại trong rừng"), ("sunken archive", "kho lưu trữ chìm"), ("market square", "quảng trường chợ")],
+                "items": [("ancient sigil", "ấn ký cổ"), ("storm key", "chìa khóa bão tố"), ("healing herb", "thảo dược hồi phục"), ("silver compass", "la bàn bạc"), ("ember shard", "mảnh than hồng"), ("moon token", "thẻ mặt trăng"), ("brass lantern", "đèn lồng đồng")],
+                "npcs": [("Captain Rhea", "đội trưởng Rhea"), ("Archivist Noll", "thủ thư Noll"), ("Merchant Vale", "thương nhân Vale"), ("Scout Ilya", "trinh sát Ilya"), ("Healer Orin", "thầy thuốc Orin"), ("Guard Toma", "lính gác Toma")],
+                "skills": [("Frost Guard", "Khiên băng"), ("Quick Step", "Bước nhanh"), ("Mana Bloom", "Nở mana"), ("Iron Focus", "Tập trung thép"), ("Flame Ward", "Kết giới lửa"), ("Silent Aim", "Ngắm lặng")],
             },
             "ja": {
                 "places": [("北門", "cổng bắc"), ("月明かりの桟橋", "bến tàu dưới trăng"), ("水晶鉱山", "mỏ pha lê"), ("西の塔", "tháp phía tây"), ("森の野営地", "trại trong rừng")],
@@ -522,16 +527,16 @@ class ContentProvider:
 
         if kind == "menu":
             labels = {
-                "en": [("START", "BẮT ĐẦU"), ("SKILLS", "KỸ NĂNG"), ("INVENTORY", "TÚI ĐỒ"), ("MAP", "BẢN ĐỒ"), ("SAVE", "LƯU"), ("OPTIONS", "TÙY CHỌN")],
+                "en": [("START", "BẮT ĐẦU"), ("SKILLS", "KỸ NĂNG"), ("INVENTORY", "TÚI ĐỒ"), ("MAP", "BẢN ĐỒ"), ("SAVE", "LƯU"), ("OPTIONS", "TÙY CHỌN"), ("LOAD GAME", "TẢI GAME"), ("PARTY", "NHÓM"), ("CRAFT", "CHẾ TẠO"), ("EQUIP", "TRANG BỊ"), ("SAVE SLOT {level}", "Ô LƯU {level}"), ("QUEST LOG", "NHẬT KÝ NHIỆM VỤ")],
                 "ja": [("開始", "BẮT ĐẦU"), ("スキル", "KỸ NĂNG"), ("所持品", "TÚI ĐỒ"), ("地図", "BẢN ĐỒ"), ("セーブ", "LƯU"), ("設定", "TÙY CHỌN")],
                 "zh": [("开始", "BẮT ĐẦU"), ("技能", "KỸ NĂNG"), ("背包", "TÚI ĐỒ"), ("地图", "BẢN ĐỒ"), ("保存", "LƯU"), ("设置", "TÙY CHỌN")],
             }
-            text, translated = rng.choice(labels[language])
-            return {"text": text, "translated_text": translated, "kind": kind}
+            text_template, vi_template = rng.choice(labels[language])
+            return {"text": text_template.format(**v), "translated_text": vi_template.format(**v), "kind": kind}
 
         if kind == "hud":
             labels = {
-                "en": [("HP {current}/{max}", "HP {current}/{max}"), ("MP {current}/{max}", "MP {current}/{max}"), ("LV {level}", "Cấp {level}"), ("COMBO x{combo}", "Liên kích {combo}")],
+                "en": [("HP {current}/{max}", "HP {current}/{max}"), ("MP {current}/{max}", "MP {current}/{max}"), ("LV {level}", "Cấp {level}"), ("COMBO x{combo}", "Liên kích {combo}"), ("EXP {current}/{max}", "Kinh nghiệm {current}/{max}"), ("GOLD {current}", "Vàng {current}"), ("DAY {level}", "Ngày {level}")],
                 "ja": [("体力 {current}/{max}", "Thể lực {current}/{max}"), ("魔力 {current}/{max}", "Ma lực {current}/{max}"), ("レベル {level}", "Cấp {level}"), ("連携 {combo}", "Liên kích {combo}")],
                 "zh": [("生命 {current}/{max}", "Sinh lực {current}/{max}"), ("魔力 {current}/{max}", "Ma lực {current}/{max}"), ("等级 {level}", "Cấp {level}"), ("连击 {combo}", "Liên kích {combo}")],
             }

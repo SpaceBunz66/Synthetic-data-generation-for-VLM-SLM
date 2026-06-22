@@ -28,9 +28,15 @@ def generate_dataset(
     content_model: str | None = None,
     api_timeout: int = 45,
     game_renderer: str = "auto",
-    blocks_per_sample: int = 5,
+    blocks_per_sample: int | None = None,
+    difficulty: str = "normal",
 ) -> Dict[str, Any]:
     """Generate a synthetic manga/game dataset and return validation summary."""
+
+    if difficulty not in {"normal", "dense"}:
+        raise ValueError("difficulty must be one of: normal, dense")
+
+    requested_blocks = blocks_per_sample if blocks_per_sample is not None else (12 if difficulty == "dense" else 5)
 
     output_dir = output_dir.resolve()
     if clean and output_dir.exists():
@@ -47,8 +53,8 @@ def generate_dataset(
     )
     writer = SyntheticDatasetWriter(output_dir)
     augmentor = Augmentor(enabled=augment)
-    manga_renderer = MangaRenderer()
-    game_renderer_obj = GameRenderer(mode=game_renderer)
+    manga_renderer = MangaRenderer(difficulty=difficulty)
+    game_renderer_obj = GameRenderer(mode=game_renderer, difficulty=difficulty)
 
     category_counts: Counter[str] = Counter()
     renderer_counts: Counter[str] = Counter()
@@ -60,7 +66,7 @@ def generate_dataset(
         rng = random.Random(sample_seed)
         sample_id = f"{category}_{index:06d}"
 
-        blocks = content_provider_obj.make_blocks(category, sample_seed, blocks_per_sample)
+        blocks = content_provider_obj.make_blocks(category, sample_seed, requested_blocks)
         if category == "manga":
             rendered = manga_renderer.render(sample_id, blocks, rng)
         else:
@@ -74,6 +80,9 @@ def generate_dataset(
                 "source_languages": sorted({block.source_language for block in blocks}),
                 "content_cache": "cache/content",
                 "augmentation": augmentation_meta,
+                "difficulty": difficulty,
+                "requested_blocks": requested_blocks,
+                "rendered_line_count": len(lines),
             }
         )
 
@@ -101,7 +110,8 @@ def generate_dataset(
         "content_provider": content_provider_obj.provider,
         "content_model": content_provider_obj.model,
         "game_renderer": game_renderer,
-        "blocks_per_sample": blocks_per_sample,
+        "blocks_per_sample": requested_blocks,
+        "difficulty": difficulty,
         "category_counts": dict(category_counts),
         "renderer_counts": dict(renderer_counts),
         "language_counts": dict(language_counts),
