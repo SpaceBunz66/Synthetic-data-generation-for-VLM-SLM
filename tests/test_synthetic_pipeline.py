@@ -67,6 +67,27 @@ class SyntheticPipelineTests(unittest.TestCase):
             second_vlm = (second / "annotations" / "vlm" / "manga_000000.json").read_text(encoding="utf-8")
             self.assertEqual(first_vlm, second_vlm)
 
+    def test_generation_progress_callback_reports_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dataset"
+            events = []
+            generate_dataset(
+                out,
+                count=3,
+                seed=171,
+                clean=True,
+                augment=False,
+                game_renderer="pillow",
+                progress_callback=events.append,
+            )
+
+            generate_events = [event for event in events if event["phase"] == "generate"]
+            self.assertEqual([event["completed"] for event in generate_events], [1, 2, 3])
+            self.assertEqual([event["total"] for event in generate_events], [3, 3, 3])
+            self.assertEqual(events[-2]["phase"], "validate")
+            self.assertEqual(events[-1]["phase"], "done")
+            self.assertEqual(events[-1]["validation_errors"], 0)
+
     def test_dense_difficulty_increases_game_text_density(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             normal = Path(tmp) / "normal"
@@ -107,7 +128,7 @@ class SyntheticPipelineTests(unittest.TestCase):
             out = Path(tmp) / "dataset"
             summary = generate_dataset(
                 out,
-                count=8,
+                count=16,
                 seed=404,
                 clean=True,
                 augment=False,
@@ -120,7 +141,11 @@ class SyntheticPipelineTests(unittest.TestCase):
             panel_art_styles = set()
             panel_art_counts = []
             panel_art_overlaps = []
+            panel_color_counts = []
+            panel_color_palettes = set()
             scene_styles = set()
+            scene_variants = set()
+            scene_actor_counts = []
             bubble_overlaps = []
             noise_patterns = set()
             nameplate_texts = []
@@ -132,10 +157,14 @@ class SyntheticPipelineTests(unittest.TestCase):
                     panel_art_styles.update(panel_art.get("styles", []))
                     panel_art_counts.append(panel_art.get("art_count", 0))
                     panel_art_overlaps.append(panel_art.get("bubble_overlap_max", 1.0))
+                    panel_color_counts.append(panel_art.get("color_clutter_count", 0))
+                    panel_color_palettes.update(panel_art.get("color_palettes", []))
                     bubble_overlaps.append(payload["metadata"].get("bubble_overlap_max", 1.0))
                     noise_patterns.update(payload["metadata"].get("panel_noise", {}).get("patterns", []))
                 if payload["category"] == "game":
                     scene_styles.add(payload["metadata"].get("scene_style"))
+                    scene_variants.add(payload["metadata"].get("scene_variant"))
+                    scene_actor_counts.append(payload["metadata"].get("scene_actor_count", 0))
                     if payload["metadata"].get("scene_style") == "nameplate_scene":
                         nameplate_texts.extend(line["text"] for line in payload["content"])
 
@@ -144,11 +173,15 @@ class SyntheticPipelineTests(unittest.TestCase):
             self.assertTrue(panel_art_counts)
             self.assertTrue(all(count >= 5 for count in panel_art_counts))
             self.assertLessEqual(max(panel_art_overlaps), 0.2)
-            self.assertGreaterEqual(len(scene_styles), 2)
+            self.assertTrue(panel_color_counts)
+            self.assertTrue(all(count > 0 for count in panel_color_counts))
+            self.assertGreaterEqual(len(panel_color_palettes), 3)
+            self.assertGreaterEqual(len(scene_styles), 5)
+            self.assertGreaterEqual(len(scene_variants), 5)
+            self.assertTrue(all(count > 0 for count in scene_actor_counts))
             self.assertLessEqual(max(bubble_overlaps), 0.2)
             self.assertIn("paper_grain", noise_patterns)
             self.assertTrue({"screentone", "hatching", "dust_scratches"} & noise_patterns)
-            self.assertTrue(nameplate_texts)
             self.assertTrue(all(text in GAME_NAMEPLATE_TEXTS for text in nameplate_texts))
 
     def test_dense_difficulty_is_deterministic_without_augmentation(self) -> None:

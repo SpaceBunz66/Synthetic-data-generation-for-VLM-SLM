@@ -6,7 +6,7 @@ import random
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from synthetic_data.augment import Augmentor
 from synthetic_data.content import ContentProvider
@@ -30,6 +30,7 @@ def generate_dataset(
     game_renderer: str = "auto",
     blocks_per_sample: int | None = None,
     difficulty: str = "normal",
+    progress_callback: Callable[[Dict[str, Any]], None] | None = None,
 ) -> Dict[str, Any]:
     """Generate a synthetic manga/game dataset and return validation summary."""
 
@@ -101,6 +102,17 @@ def generate_dataset(
         category_counts[category] += 1
         renderer_counts[str(metadata.get("renderer", "unknown"))] += 1
         language_counts.update(line.source_language for line in lines)
+        if progress_callback:
+            progress_callback(
+                {
+                    "phase": "generate",
+                    "completed": index + 1,
+                    "total": count,
+                    "sample_id": sample_id,
+                    "category": category,
+                    "renderer": metadata.get("renderer", "unknown"),
+                }
+            )
 
     summary: Dict[str, Any] = {
         "requested_count": count,
@@ -116,7 +128,18 @@ def generate_dataset(
         "renderer_counts": dict(renderer_counts),
         "language_counts": dict(language_counts),
     }
+    if progress_callback:
+        progress_callback({"phase": "validate", "completed": count, "total": count})
     validation = validate_output_dir(output_dir)
     summary["validation"] = validation
     writer.write_summary(summary)
+    if progress_callback:
+        progress_callback(
+            {
+                "phase": "done",
+                "completed": count,
+                "total": count,
+                "validation_errors": validation["error_count"],
+            }
+        )
     return summary

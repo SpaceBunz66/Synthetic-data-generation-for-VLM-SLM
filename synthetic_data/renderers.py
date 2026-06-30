@@ -351,6 +351,8 @@ class MangaRenderer:
         styles_used: List[str] = []
         art_boxes: List[Rect] = []
         max_bubble_overlap = 0.0
+        color_clutter_count = 0
+        color_palettes: List[str] = []
 
         for idx, panel in enumerate(panels):
             avoid = list(avoid_by_panel.get(panel, []))
@@ -375,12 +377,17 @@ class MangaRenderer:
             art_boxes.append(art_rect)
             if dense or rng.random() < 0.45:
                 self._draw_manga_panel_props(draw, panel, avoid + [art_rect], rng, dense)
+            clutter_count, palettes = self._draw_manga_color_clutter(draw, panel, avoid + [art_rect], rng, dense)
+            color_clutter_count += clutter_count
+            color_palettes.extend(palettes)
 
         return {
             "enabled": True,
             "art_count": len(art_boxes),
             "panel_count": len(panels),
             "styles": sorted(set(styles_used)),
+            "color_clutter_count": color_clutter_count,
+            "color_palettes": sorted(set(color_palettes)),
             "bubble_overlap_max": round(max_bubble_overlap, 4),
         }
 
@@ -687,6 +694,71 @@ class MangaRenderer:
             else:
                 draw.polygon([(x1, y2), ((x1 + x2) // 2, y1), (x2, y2)], outline=(shade, shade, shade))
 
+    def _draw_manga_color_clutter(
+        self,
+        draw: ImageDraw.ImageDraw,
+        panel: Rect,
+        avoid: Sequence[Rect],
+        rng: random.Random,
+        dense: bool,
+    ) -> Tuple[int, List[str]]:
+        palettes = {
+            "marker": [(226, 64, 72), (255, 210, 80), (74, 164, 238), (78, 198, 116)],
+            "neon": [(236, 82, 198), (64, 224, 218), (255, 126, 72), (160, 112, 240)],
+            "poster": [(190, 52, 60), (42, 84, 156), (238, 190, 74), (54, 142, 92)],
+            "pastel": [(236, 150, 158), (132, 198, 226), (238, 216, 126), (164, 210, 150)],
+        }
+        attempts = rng.randint(4, 8) if dense else rng.randint(1, 3)
+        count = 0
+        used_palettes: List[str] = []
+        x1, y1, x2, y2 = panel
+
+        for _ in range(attempts):
+            palette_name = rng.choice(list(palettes))
+            palette = palettes[palette_name]
+            rect = self._choose_small_panel_rect(panel, avoid, rng)
+            if _max_overlap_with(rect, avoid) > (0.05 if dense else 0.03):
+                continue
+            rx1, ry1, rx2, ry2 = rect
+            color = rng.choice(palette)
+            shape = rng.choice(["paint", "sticker", "tape", "confetti", "warning"])
+            if shape == "paint":
+                radius = max(8, min(rx2 - rx1, ry2 - ry1) // 2)
+                cx = (rx1 + rx2) // 2
+                cy = (ry1 + ry2) // 2
+                draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=color, outline=(40, 40, 40))
+                for _dot in range(3):
+                    dx = rng.randint(-radius * 2, radius * 2)
+                    dy = rng.randint(-radius, radius)
+                    dot_r = rng.randint(2, 5)
+                    px = max(x1 + 8, min(x2 - 8, cx + dx))
+                    py = max(y1 + 8, min(y2 - 8, cy + dy))
+                    draw.ellipse((px - dot_r, py - dot_r, px + dot_r, py + dot_r), fill=color)
+            elif shape == "sticker":
+                draw.rounded_rectangle(rect, radius=6, fill=color, outline=(35, 35, 35), width=2)
+                draw.line((rx1 + 5, ry1 + 5, rx2 - 5, ry2 - 5), fill=(255, 255, 255), width=2)
+                draw.line((rx1 + 5, ry2 - 5, rx2 - 5, ry1 + 5), fill=(255, 255, 255), width=1)
+            elif shape == "tape":
+                strip_h = max(8, (ry2 - ry1) // 3)
+                y = (ry1 + ry2 - strip_h) // 2
+                draw.rectangle((rx1, y, rx2, y + strip_h), fill=color, outline=(54, 54, 54))
+                for x in range(rx1 + 4, rx2, 10):
+                    draw.line((x, y, x + 4, y + strip_h), fill=(255, 255, 255), width=1)
+            elif shape == "warning":
+                draw.polygon([(rx1, ry2), ((rx1 + rx2) // 2, ry1), (rx2, ry2)], fill=color, outline=(40, 40, 40))
+                cx = (rx1 + rx2) // 2
+                draw.line((cx, ry1 + 8, cx, ry2 - 10), fill=(20, 20, 20), width=2)
+                draw.ellipse((cx - 2, ry2 - 7, cx + 2, ry2 - 3), fill=(20, 20, 20))
+            else:
+                for _piece in range(rng.randint(4, 8)):
+                    px = rng.randint(rx1, max(rx1, rx2 - 4))
+                    py = rng.randint(ry1, max(ry1, ry2 - 4))
+                    draw.rectangle((px, py, px + rng.randint(3, 8), py + rng.randint(3, 8)), fill=rng.choice(palette))
+            count += 1
+            used_palettes.append(palette_name)
+
+        return count, used_palettes
+
     def _choose_small_panel_rect(self, panel: Rect, avoid: Sequence[Rect], rng: random.Random) -> Rect:
         x1, y1, x2, y2 = panel
         panel_w = x2 - x1
@@ -941,10 +1013,13 @@ class GameRenderer:
         image = Image.open(io.BytesIO(png)).convert("RGB")
         lines = self._annotations_from_layout(layout, boxes)
         scene_style = str(layout[0].get("scene_style", "hud_overlay")) if layout else "hud_overlay"
+        scene_variant = str(layout[0].get("scene_variant", scene_style)) if layout else scene_style
         metadata = {
             "renderer": "game_playwright",
             "template": "html_css_dense_game_ui_v1" if self.difficulty == "dense" else "html_css_game_ui_v1",
             "scene_style": scene_style,
+            "scene_variant": scene_variant,
+            "scene_actor_count": self._scene_actor_count(scene_style),
             "asset_provenance": "procedural/licensed-by-construction",
             "sample_id": sample_id,
         }
@@ -961,6 +1036,7 @@ class GameRenderer:
         self._draw_game_background(draw, rng)
         layout = self._game_layout(blocks, rng)
         scene_style = str(layout[0].get("scene_style", "hud_overlay")) if layout else "hud_overlay"
+        scene_variant = str(layout[0].get("scene_variant", scene_style)) if layout else scene_style
         if self.difficulty == "dense":
             self._draw_dense_game_clutter(draw, rng, scene_style)
         else:
@@ -980,6 +1056,8 @@ class GameRenderer:
             "renderer": "game_pillow",
             "template": "procedural_dense_game_ui_v1" if self.difficulty == "dense" else "procedural_game_ui_v1",
             "scene_style": scene_style,
+            "scene_variant": scene_variant,
+            "scene_actor_count": self._scene_actor_count(scene_style),
             "asset_provenance": "procedural/licensed-by-construction",
             "sample_id": sample_id,
         }
@@ -1064,6 +1142,7 @@ class GameRenderer:
                         "box_fill": slot.get("box_fill", (25, 33, 44)),
                         "box_outline": slot.get("box_outline", (180, 200, 220)),
                         "scene_style": slot.get("scene_style", "hud_overlay"),
+                        "scene_variant": slot.get("scene_variant", slot.get("scene_style", "hud_overlay")),
                     }
                 )
         return layout
@@ -1087,17 +1166,39 @@ class GameRenderer:
         return block.text, block.translated_text, block.kind
 
     def _dense_game_slots(self, block_count: int, rng: random.Random) -> List[Dict[str, Any]]:
-        style = rng.choice(["dialogue_scene", "nameplate_scene", "crafting_menu", "hud_overlay"])
+        style = rng.choice(
+            [
+                "dialogue_scene",
+                "nameplate_scene",
+                "crafting_menu",
+                "hud_overlay",
+                "battle_arena",
+                "vendor_shop",
+                "map_screen",
+                "party_status",
+            ]
+        )
         if style == "dialogue_scene":
             slots = self._dense_dialogue_slots(block_count, rng)
         elif style == "nameplate_scene":
             slots = self._dense_nameplate_slots(block_count, rng)
         elif style == "crafting_menu":
             slots = self._dense_crafting_slots(block_count, rng)
+        elif style == "battle_arena":
+            slots = self._dense_battle_slots(block_count, rng)
+        elif style == "vendor_shop":
+            slots = self._dense_vendor_slots(block_count, rng)
+        elif style == "map_screen":
+            slots = self._dense_map_slots(block_count, rng)
+        elif style == "party_status":
+            slots = self._dense_party_slots(block_count, rng)
         else:
             slots = self._dense_hud_slots(block_count, rng)
+        scene_variant = f"{style}_{rng.choice(['a', 'b', 'c'])}"
+        self._jitter_dense_slots(slots, rng)
         for slot in slots:
             slot["scene_style"] = style
+            slot["scene_variant"] = scene_variant
         return slots
 
     def _dense_hud_slots(self, block_count: int, rng: random.Random) -> List[Dict[str, Any]]:
@@ -1229,10 +1330,143 @@ class GameRenderer:
             slot["draw_box"] = False
         return slots
 
+    def _dense_battle_slots(self, block_count: int, rng: random.Random) -> List[Dict[str, Any]]:
+        slots: List[Dict[str, Any]] = [
+            {"box": (70, 28, 570, 84), "x": 92, "y": 46, "font_size": 17, "color": (255, 210, 112), "max_lines": 1, "box_fill": (42, 18, 24), "box_outline": (218, 92, 72)},
+            {"box": (38, 96, 226, 206), "x": 58, "y": 116, "font_size": 16, "color": (220, 255, 210), "max_lines": 1, "box_fill": (18, 34, 28)},
+            {"box": (38, 96, 226, 206), "x": 58, "y": 146, "font_size": 16, "color": (178, 228, 255), "max_lines": 1, "box_fill": (18, 34, 28)},
+            {"box": (38, 96, 226, 206), "x": 58, "y": 176, "font_size": 15, "color": (255, 232, 166), "max_lines": 1, "box_fill": (18, 34, 28)},
+            {"box": (408, 92, 604, 210), "x": 430, "y": 112, "font_size": 16, "color": (255, 236, 184), "max_lines": 1, "box_fill": (34, 28, 18)},
+            {"box": (408, 92, 604, 210), "x": 430, "y": 142, "font_size": 15, "color": (230, 244, 255), "max_lines": 1, "box_fill": (34, 28, 18)},
+            {"box": (34, 468, 606, 612), "x": 58, "y": 492, "font_size": 18, "color": (245, 246, 238), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (230, 210, 160)},
+            {"box": (34, 468, 606, 612), "x": 58, "y": 524, "font_size": 18, "color": (255, 226, 142), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (230, 210, 160)},
+            {"box": (34, 468, 606, 612), "x": 58, "y": 556, "font_size": 17, "color": (190, 236, 255), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (230, 210, 160)},
+            {"box": None, "x": 254, "y": 284, "font_size": 18, "color": (255, 76, 76), "max_lines": 1},
+            {"box": None, "x": 380, "y": 278, "font_size": 17, "color": (86, 255, 112), "max_lines": 1, "nameplate_role": "name", "nameplate_id": 0},
+            {"box": None, "x": 146, "y": 322, "font_size": 17, "color": (86, 255, 112), "max_lines": 1, "nameplate_role": "name", "nameplate_id": 1},
+        ]
+        while len(slots) < block_count and len(slots) < 22:
+            slots.append(
+                {
+                    "box": None,
+                    "x": rng.randint(60, 500),
+                    "y": rng.randint(230, 430),
+                    "font_size": rng.randint(14, 17),
+                    "color": rng.choice([(255, 76, 76), (255, 232, 166), (86, 255, 112), (210, 240, 255)]),
+                    "max_lines": 1,
+                }
+            )
+        return slots
+
+    def _dense_vendor_slots(self, block_count: int, rng: random.Random) -> List[Dict[str, Any]]:
+        shop_panel = (26, 330, 614, 616)
+        slots: List[Dict[str, Any]] = [
+            {"box": None, "x": 212, "y": 208, "font_size": 18, "color": (48, 255, 70), "max_lines": 1, "nameplate_role": "name", "nameplate_id": 0},
+            {"box": None, "x": 198, "y": 234, "font_size": 15, "color": (48, 255, 70), "max_lines": 1, "nameplate_role": "title", "nameplate_id": 0},
+            {"box": None, "x": 430, "y": 282, "font_size": 16, "color": (48, 255, 70), "max_lines": 1, "nameplate_role": "name", "nameplate_id": 1},
+            {"box": shop_panel, "x": 54, "y": 354, "font_size": 18, "color": (255, 214, 104), "max_lines": 1, "box_fill": (18, 14, 10), "box_outline": (194, 154, 82)},
+            {"box": shop_panel, "x": 54, "y": 386, "font_size": 17, "color": (236, 232, 204), "max_lines": 1, "box_fill": (18, 14, 10), "box_outline": (194, 154, 82)},
+            {"box": shop_panel, "x": 54, "y": 418, "font_size": 17, "color": (236, 232, 204), "max_lines": 1, "box_fill": (18, 14, 10), "box_outline": (194, 154, 82)},
+            {"box": shop_panel, "x": 54, "y": 450, "font_size": 17, "color": (236, 232, 204), "max_lines": 1, "box_fill": (18, 14, 10), "box_outline": (194, 154, 82)},
+            {"box": (368, 350, 586, 528), "x": 392, "y": 374, "font_size": 16, "color": (166, 232, 255), "max_lines": 1, "box_fill": (20, 30, 36), "box_outline": (132, 188, 210)},
+            {"box": (368, 350, 586, 528), "x": 392, "y": 406, "font_size": 16, "color": (255, 228, 178), "max_lines": 1, "box_fill": (20, 30, 36), "box_outline": (132, 188, 210)},
+            {"box": (42, 34, 240, 108), "x": 62, "y": 56, "font_size": 15, "color": (230, 244, 255), "max_lines": 1, "box_fill": (18, 24, 28)},
+            {"box": None, "x": 382, "y": 74, "font_size": 17, "color": (255, 232, 166), "max_lines": 1},
+            {"box": None, "x": 82, "y": 270, "font_size": 16, "color": (210, 240, 255), "max_lines": 1},
+        ]
+        while len(slots) < block_count and len(slots) < 22:
+            slots.append(
+                {
+                    "box": shop_panel if rng.random() < 0.65 else None,
+                    "x": rng.choice([54, 392, rng.randint(80, 470)]),
+                    "y": rng.randint(360, 560),
+                    "font_size": rng.randint(14, 16),
+                    "color": rng.choice([(236, 232, 204), (255, 214, 104), (166, 232, 255), (210, 240, 255)]),
+                    "max_lines": 1,
+                    "box_fill": (18, 14, 10),
+                    "box_outline": (194, 154, 82),
+                }
+            )
+        return slots
+
+    def _dense_map_slots(self, block_count: int, rng: random.Random) -> List[Dict[str, Any]]:
+        map_panel = (42, 52, 430, 512)
+        quest_panel = (444, 72, 616, 512)
+        slots: List[Dict[str, Any]] = [
+            {"box": map_panel, "x": 66, "y": 78, "font_size": 16, "color": (72, 44, 24), "max_lines": 1, "box_fill": (214, 184, 122), "box_outline": (92, 64, 36)},
+            {"box": None, "x": 136, "y": 180, "font_size": 15, "color": (84, 52, 28), "max_lines": 1},
+            {"box": None, "x": 274, "y": 256, "font_size": 15, "color": (84, 52, 28), "max_lines": 1},
+            {"box": None, "x": 94, "y": 376, "font_size": 15, "color": (84, 52, 28), "max_lines": 1},
+            {"box": quest_panel, "x": 466, "y": 98, "font_size": 16, "color": (255, 232, 166), "max_lines": 1, "box_fill": (18, 24, 32), "box_outline": (148, 174, 194)},
+            {"box": quest_panel, "x": 466, "y": 132, "font_size": 15, "color": (230, 244, 255), "max_lines": 1, "box_fill": (18, 24, 32), "box_outline": (148, 174, 194)},
+            {"box": quest_panel, "x": 466, "y": 166, "font_size": 15, "color": (230, 244, 255), "max_lines": 1, "box_fill": (18, 24, 32), "box_outline": (148, 174, 194)},
+            {"box": quest_panel, "x": 466, "y": 200, "font_size": 15, "color": (230, 244, 255), "max_lines": 1, "box_fill": (18, 24, 32), "box_outline": (148, 174, 194)},
+            {"box": (62, 534, 580, 612), "x": 84, "y": 556, "font_size": 17, "color": (245, 246, 238), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (220, 220, 210)},
+            {"box": None, "x": 468, "y": 540, "font_size": 16, "color": (52, 255, 74), "max_lines": 1, "nameplate_role": "name", "nameplate_id": 0},
+            {"box": None, "x": 480, "y": 566, "font_size": 14, "color": (52, 255, 74), "max_lines": 1, "nameplate_role": "title", "nameplate_id": 0},
+        ]
+        while len(slots) < block_count and len(slots) < 21:
+            slots.append(
+                {
+                    "box": rng.choice([map_panel, quest_panel, None]),
+                    "x": rng.choice([rng.randint(76, 330), 466, rng.randint(80, 500)]),
+                    "y": rng.randint(110, 500),
+                    "font_size": rng.randint(13, 16),
+                    "color": rng.choice([(84, 52, 28), (230, 244, 255), (255, 232, 166), (52, 255, 74)]),
+                    "max_lines": 1,
+                    "box_fill": (18, 24, 32),
+                    "box_outline": (148, 174, 194),
+                }
+            )
+        return slots
+
+    def _dense_party_slots(self, block_count: int, rng: random.Random) -> List[Dict[str, Any]]:
+        slots: List[Dict[str, Any]] = []
+        card_boxes = [(30, 52, 294, 188), (346, 52, 610, 188), (30, 224, 294, 360), (346, 224, 610, 360)]
+        for idx, box in enumerate(card_boxes):
+            x = box[0] + 84
+            y = box[1] + 22
+            slots.append({"box": box, "x": x, "y": y, "font_size": 16, "color": (52, 255, 74), "max_lines": 1, "nameplate_role": "name", "nameplate_id": idx, "box_fill": (18, 24, 32), "box_outline": (126, 154, 174)})
+            slots.append({"box": box, "x": x, "y": y + 30, "font_size": 14, "color": (255, 232, 166), "max_lines": 1, "box_fill": (18, 24, 32), "box_outline": (126, 154, 174)})
+        slots.extend(
+            [
+                {"box": (32, 412, 608, 610), "x": 58, "y": 438, "font_size": 18, "color": (245, 246, 238), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (220, 220, 210)},
+                {"box": (32, 412, 608, 610), "x": 58, "y": 472, "font_size": 17, "color": (230, 244, 255), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (220, 220, 210)},
+                {"box": (32, 412, 608, 610), "x": 58, "y": 506, "font_size": 17, "color": (255, 228, 178), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (220, 220, 210)},
+                {"box": (32, 412, 608, 610), "x": 58, "y": 540, "font_size": 17, "color": (220, 255, 210), "max_lines": 1, "box_fill": (10, 12, 18), "box_outline": (220, 220, 210)},
+            ]
+        )
+        while len(slots) < block_count and len(slots) < 22:
+            box = rng.choice(card_boxes)
+            slots.append(
+                {
+                    "box": box,
+                    "x": box[0] + rng.randint(86, 150),
+                    "y": box[1] + rng.randint(64, 98),
+                    "font_size": rng.randint(13, 15),
+                    "color": rng.choice([(230, 244, 255), (255, 232, 166), (220, 255, 210)]),
+                    "max_lines": 1,
+                    "box_fill": (18, 24, 32),
+                    "box_outline": (126, 154, 174),
+                }
+            )
+        return slots
+
+    def _jitter_dense_slots(self, slots: Sequence[Dict[str, Any]], rng: random.Random) -> None:
+        for slot in slots:
+            slot["x"] = max(12, min(self.width - 34, int(slot["x"]) + rng.randint(-8, 8)))
+            slot["y"] = max(12, min(self.height - 26, int(slot["y"]) + rng.randint(-6, 6)))
+            if rng.random() < 0.18:
+                color = slot.get("color", (230, 230, 230))
+                slot["color"] = tuple(max(32, min(255, int(c) + rng.randint(-16, 16))) for c in color)
+
     def _html_for_layout(self, layout: Sequence[Dict[str, Any]]) -> str:
         box_html = []
         line_html = []
         emitted_boxes = set()
+        scene_style = str(layout[0].get("scene_style", "hud_overlay")) if layout else "hud_overlay"
+        scene_variant = str(layout[0].get("scene_variant", scene_style)) if layout else scene_style
+        decor_html = self._html_scene_decor(scene_style, scene_variant)
         for idx, item in enumerate(layout):
             if item["box"] and item["box"] not in emitted_boxes:
                 emitted_boxes.add(item["box"])
@@ -1248,7 +1482,7 @@ class GameRenderer:
                 f"font-size:{item['font_size']}px;color:{color}'>"
                 f"{html.escape(item['text'])}</span>"
             )
-        scene_class = "dense" if self.difficulty == "dense" else ""
+        scene_class = f"{'dense' if self.difficulty == 'dense' else ''} scene-{scene_style} variant-{scene_variant}".strip()
         dense_css = """
             #scene.dense:after {
               content: "";
@@ -1259,6 +1493,66 @@ class GameRenderer:
                 linear-gradient(12deg, transparent 0 58%, rgba(255,255,255,.12) 59% 61%, transparent 62%);
               pointer-events: none;
               z-index: 3;
+            }
+            .sprite, .prop, .map-mark, .slash, .shop-item, .portrait {
+              position: absolute;
+              z-index: 1;
+              pointer-events: none;
+            }
+            .sprite .head {
+              position: absolute;
+              width: 34px;
+              height: 34px;
+              left: 23px;
+              top: 0;
+              border-radius: 50%;
+              background: var(--head, #87909a);
+              border: 2px solid rgba(230,238,245,.72);
+            }
+            .sprite .body {
+              position: absolute;
+              width: 78px;
+              height: 92px;
+              left: 0;
+              top: 34px;
+              clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+              background: var(--body, #44546a);
+              border: 2px solid rgba(210,220,232,.62);
+            }
+            .portrait {
+              width: 58px;
+              height: 72px;
+              border-radius: 9px;
+              background: radial-gradient(circle at 50% 24%, #b7bec8 0 15%, transparent 16%),
+                          linear-gradient(155deg, #384454, #141820);
+              border: 2px solid rgba(220,230,240,.74);
+              box-shadow: inset 0 -18px 0 rgba(255,255,255,.07);
+            }
+            .prop {
+              border: 2px solid rgba(230,230,220,.7);
+              background: rgba(90,118,132,.42);
+              box-shadow: 0 6px 18px rgba(0,0,0,.24);
+            }
+            .slash {
+              height: 4px;
+              background: rgba(255,220,100,.74);
+              transform: rotate(-18deg);
+              box-shadow: 0 0 12px rgba(255,220,100,.55);
+            }
+            .map-mark {
+              width: 16px;
+              height: 16px;
+              border-radius: 50%;
+              background: #d43c34;
+              border: 2px solid #fff2b0;
+              box-shadow: 0 0 0 5px rgba(212,60,52,.24);
+            }
+            .shop-item {
+              width: 34px;
+              height: 34px;
+              border-radius: 7px;
+              background: linear-gradient(135deg, #e0bc52, #4e78d6);
+              border: 2px solid rgba(245,238,210,.8);
             }
         """ if self.difficulty == "dense" else ""
         return f"""
@@ -1289,6 +1583,7 @@ class GameRenderer:
             }}
             .panel {{
               position: absolute;
+              z-index: 2;
               border: 2px solid rgba(210,225,235,.88);
               background: rgba(16, 24, 36, .84);
               border-radius: 8px;
@@ -1296,7 +1591,7 @@ class GameRenderer:
             }}
             .line {{
               position: absolute;
-              z-index: 2;
+              z-index: 4;
               font-weight: 700;
               line-height: 1.16;
               white-space: pre;
@@ -1305,9 +1600,76 @@ class GameRenderer:
             {dense_css}
           </style>
         </head>
-        <body><div id="scene" class="{scene_class}">{''.join(box_html)}{''.join(line_html)}</div></body>
+        <body><div id="scene" class="{scene_class}">{decor_html}{''.join(box_html)}{''.join(line_html)}</div></body>
         </html>
         """
+
+    def _html_scene_decor(self, scene_style: str, scene_variant: str) -> str:
+        sprites = {
+            "dialogue_scene": [
+                (284, 284, "#6d6178", "#b6bac4"),
+                (412, 250, "#405069", "#aeb6c0"),
+            ],
+            "nameplate_scene": [
+                (82, 340, "#4f5f72", "#abb4be"),
+                (294, 288, "#6a514d", "#b8b1a6"),
+                (486, 318, "#50684f", "#b7c5b0"),
+            ],
+            "crafting_menu": [
+                (452, 342, "#58506a", "#b8b0c8"),
+                (192, 372, "#5f513d", "#c2b294"),
+            ],
+            "hud_overlay": [
+                (300, 282, "#405069", "#aeb6c0"),
+                (184, 348, "#584b3e", "#b8ad9d"),
+            ],
+            "battle_arena": [
+                (226, 286, "#354762", "#b7c0cc"),
+                (392, 246, "#63343a", "#c5a5a5"),
+                (478, 310, "#26333d", "#93a3ae"),
+            ],
+            "vendor_shop": [
+                (210, 178, "#6a4e35", "#c4b194"),
+                (438, 252, "#334c64", "#aebac6"),
+            ],
+            "map_screen": [
+                (494, 454, "#43566d", "#b7c0ca"),
+            ],
+            "party_status": [
+                (54, 82, "#465872", "#b7c0cc"),
+                (370, 82, "#675040", "#c2b099"),
+                (54, 254, "#4f684e", "#b8c8b2"),
+                (370, 254, "#654661", "#c6b2c8"),
+            ],
+        }.get(scene_style, [(300, 282, "#405069", "#aeb6c0")])
+        html_parts = [
+            f"<div class='sprite' style='left:{x}px;top:{y}px;--body:{body};--head:{head}'><span class='head'></span><span class='body'></span></div>"
+            for x, y, body, head in sprites
+        ]
+        if scene_style == "battle_arena":
+            html_parts.extend(
+                [
+                    "<div class='slash' style='left:250px;top:236px;width:150px'></div>",
+                    "<div class='slash' style='left:166px;top:386px;width:116px;transform:rotate(21deg)'></div>",
+                ]
+            )
+        elif scene_style == "vendor_shop":
+            for idx, x in enumerate([84, 128, 172, 498, 542]):
+                html_parts.append(f"<div class='shop-item' style='left:{x}px;top:{126 + (idx % 2) * 38}px'></div>")
+        elif scene_style == "map_screen":
+            html_parts.extend(
+                [
+                    "<div class='map-mark' style='left:160px;top:210px'></div>",
+                    "<div class='map-mark' style='left:306px;top:312px'></div>",
+                    "<div class='prop' style='left:78px;top:92px;width:310px;height:380px;background:rgba(210,178,116,.34)'></div>",
+                ]
+            )
+        elif scene_style == "party_status":
+            for x, y in [(54, 76), (370, 76), (54, 248), (370, 248)]:
+                html_parts.append(f"<div class='portrait' style='left:{x}px;top:{y}px'></div>")
+        else:
+            html_parts.append("<div class='prop' style='left:474px;top:80px;width:86px;height:86px;border-radius:50%'></div>")
+        return "".join(html_parts)
 
     def _annotations_from_layout(self, layout: Sequence[Dict[str, Any]], boxes: Sequence[Sequence[int]]) -> List[LineAnnotation]:
         lines: List[LineAnnotation] = []
@@ -1325,6 +1687,18 @@ class GameRenderer:
             source_language=item["source_language"],
             kind=item["kind"],
         )
+
+    def _scene_actor_count(self, scene_style: str) -> int:
+        return {
+            "dialogue_scene": 2,
+            "nameplate_scene": 5 if self.difficulty == "dense" else 3,
+            "crafting_menu": 2,
+            "hud_overlay": 2 if self.difficulty == "dense" else 1,
+            "battle_arena": 3,
+            "vendor_shop": 2,
+            "map_screen": 1,
+            "party_status": 4,
+        }.get(scene_style, 1)
 
     def _draw_game_background(self, draw: ImageDraw.ImageDraw, rng: random.Random) -> None:
         for y in range(self.height):
@@ -1362,6 +1736,14 @@ class GameRenderer:
             self._draw_dialogue_scene_clutter(draw, rng, dense=True)
         elif scene_style == "nameplate_scene":
             self._draw_nameplate_scene_clutter(draw, rng, dense=True)
+        elif scene_style == "battle_arena":
+            self._draw_battle_scene_clutter(draw, rng)
+        elif scene_style == "vendor_shop":
+            self._draw_vendor_scene_clutter(draw, rng)
+        elif scene_style == "map_screen":
+            self._draw_map_scene_clutter(draw, rng)
+        elif scene_style == "party_status":
+            self._draw_party_scene_clutter(draw, rng)
         else:
             self._draw_hud_scene_clutter(draw, rng, dense=True)
 
@@ -1439,6 +1821,72 @@ class GameRenderer:
         draw.rounded_rectangle((50, 594, 144, 626), radius=4, fill=(98, 76, 18), outline=(245, 220, 70), width=2)
         draw.rounded_rectangle((152, 594, 246, 626), radius=4, fill=(20, 20, 18), outline=(86, 86, 78), width=1)
         draw.rounded_rectangle((252, 594, 346, 626), radius=4, fill=(20, 20, 18), outline=(86, 86, 78), width=1)
+        draw.rounded_rectangle((430, 336, 582, 538), radius=8, fill=(34, 30, 32), outline=(130, 128, 120), width=2)
+        self._draw_game_character(draw, 506, 500, scale=0.78, fill=(70, 62, 86))
+        self._draw_game_character(draw, 190, 552, scale=0.58, fill=(82, 66, 48))
+        for x in [456, 494, 532]:
+            draw.ellipse((x - 9, 182, x + 9, 200), fill=(210, 180, 76), outline=(80, 72, 44))
+
+    def _draw_battle_scene_clutter(self, draw: ImageDraw.ImageDraw, rng: random.Random) -> None:
+        draw.rectangle((0, 0, 640, 240), fill=(42, 28, 38))
+        draw.polygon([(0, 254), (160, 212), (376, 244), (640, 198), (640, 640), (0, 640)], fill=(64, 54, 48))
+        for y in range(280, 640, 34):
+            draw.line((0, y, 640, y - rng.randint(24, 54)), fill=(90, 74, 62), width=3)
+        for _ in range(16):
+            x = rng.randint(50, 590)
+            y = rng.randint(210, 430)
+            draw.line((x, y, x + rng.randint(-48, 48), y + rng.randint(-18, 22)), fill=(138, 104, 72), width=2)
+        self._draw_game_character(draw, 236, 424, scale=1.0, fill=(44, 58, 78))
+        self._draw_game_character(draw, 392, 396, scale=0.95, fill=(88, 50, 58))
+        self._draw_game_character(draw, 492, 442, scale=0.82, fill=(42, 48, 52))
+        for rect, color in [((238, 238, 414, 246), (255, 210, 88)), ((138, 360, 276, 368), (100, 220, 255)), ((374, 304, 528, 312), (255, 94, 84))]:
+            draw.line((rect[0], rect[1], rect[2], rect[3]), fill=color, width=4)
+
+    def _draw_vendor_scene_clutter(self, draw: ImageDraw.ImageDraw, rng: random.Random) -> None:
+        draw.rectangle((0, 0, 640, 310), fill=(76, 52, 34))
+        for x in range(34, 640, 118):
+            draw.rectangle((x, 22, x + 92, 184), fill=(48, 36, 28), outline=(106, 78, 48), width=2)
+            for y in [60, 104, 148]:
+                draw.line((x + 8, y, x + 84, y), fill=(134, 98, 58), width=2)
+                for ix in range(x + 12, x + 78, 24):
+                    color = rng.choice([(196, 154, 64), (82, 128, 204), (126, 190, 92), (182, 94, 148)])
+                    draw.rounded_rectangle((ix, y - 28, ix + 16, y - 8), radius=3, fill=color, outline=(42, 36, 30))
+        draw.polygon([(0, 310), (640, 276), (640, 640), (0, 640)], fill=(62, 46, 34))
+        draw.rounded_rectangle((54, 272, 586, 360), radius=8, fill=(84, 58, 34), outline=(154, 116, 66), width=3)
+        self._draw_game_character(draw, 238, 288, scale=0.9, fill=(92, 70, 50))
+        self._draw_game_character(draw, 462, 346, scale=0.76, fill=(42, 62, 82))
+        for x in [100, 140, 520, 558]:
+            draw.ellipse((x - 14, 238, x + 14, 266), fill=(210, 178, 76), outline=(64, 54, 34))
+
+    def _draw_map_scene_clutter(self, draw: ImageDraw.ImageDraw, rng: random.Random) -> None:
+        draw.rectangle((0, 0, 640, 640), fill=(34, 42, 48))
+        draw.rounded_rectangle((42, 52, 430, 512), radius=12, fill=(214, 184, 122), outline=(92, 64, 36), width=3)
+        for _ in range(9):
+            x = rng.randint(72, 390)
+            y = rng.randint(86, 470)
+            draw.line((x, y, x + rng.randint(-80, 90), y + rng.randint(-48, 48)), fill=(126, 88, 48), width=2)
+        for x, y, color in [(160, 210, (210, 52, 44)), (306, 312, (52, 92, 210)), (118, 386, (54, 150, 70))]:
+            draw.ellipse((x - 10, y - 10, x + 10, y + 10), fill=color, outline=(255, 240, 180), width=2)
+            draw.line((x, y + 10, x + rng.randint(-16, 16), y + 34), fill=color, width=3)
+        draw.rounded_rectangle((444, 72, 616, 512), radius=8, fill=(18, 24, 32), outline=(148, 174, 194), width=2)
+        self._draw_game_character(draw, 530, 612, scale=0.74, fill=(58, 72, 88))
+        draw.rounded_rectangle((468, 520, 594, 622), radius=8, outline=(138, 160, 176), width=2)
+
+    def _draw_party_scene_clutter(self, draw: ImageDraw.ImageDraw, rng: random.Random) -> None:
+        draw.rectangle((0, 0, 640, 640), fill=(22, 28, 38))
+        card_boxes = [(30, 52, 294, 188), (346, 52, 610, 188), (30, 224, 294, 360), (346, 224, 610, 360)]
+        fills = [(48, 64, 86), (88, 64, 48), (52, 82, 56), (82, 52, 78)]
+        for box, fill in zip(card_boxes, fills):
+            draw.rounded_rectangle(box, radius=9, fill=(18, 24, 32), outline=(126, 154, 174), width=2)
+            px, py = box[0] + 24, box[1] + 24
+            draw.rounded_rectangle((px, py, px + 58, py + 74), radius=8, fill=(26, 30, 38), outline=(170, 182, 194), width=2)
+            self._draw_game_character(draw, px + 29, py + 76, scale=0.34, fill=fill)
+            bar_y = box[3] - 34
+            draw.rectangle((box[0] + 100, bar_y, box[2] - 24, bar_y + 8), fill=(46, 58, 68), outline=(120, 132, 142))
+            draw.rectangle((box[0] + 100, bar_y, rng.randint(box[0] + 150, box[2] - 24), bar_y + 8), fill=(64, 210, 96))
+        draw.rounded_rectangle((32, 412, 608, 610), radius=9, fill=(10, 12, 18), outline=(220, 220, 210), width=2)
+        for x in range(64, 590, 54):
+            draw.rectangle((x, 384, x + 28, 406), fill=rng.choice([(76, 92, 110), (88, 70, 52), (56, 94, 78)]), outline=(150, 160, 170))
 
     def _draw_game_character(self, draw: ImageDraw.ImageDraw, cx: int, base: int, scale: float, fill: Tuple[int, int, int]) -> None:
         head_r = max(10, int(20 * scale))

@@ -121,6 +121,7 @@ Option chính:
 - `--seed`: seed deterministic.
 - `--clean`: xóa output cũ trước khi sinh lại.
 - `--no-augment`: tắt augmentation để debug dễ hơn.
+- `--no-progress`: tắt thanh loading/ETA khi cần log sạch.
 - `--difficulty normal|dense`: `normal` giữ layout cũ; `dense` dùng layout procedural dày hơn với nhiều text/bbox hơn.
 - `--game-renderer auto|playwright|pillow`: `auto` thử Playwright trước, fallback Pillow.
 - `--blocks-per-sample`: số block text semantic trước khi wrap thành line-level bbox; mặc định là 5 cho `normal`, 12 cho `dense`.
@@ -129,7 +130,7 @@ Option chính:
 - `--api-timeout`: timeout cho API call.
 
 `dense` vẫn giữ annotation chuẩn xác bằng cách render procedural bằng Pillow/HTML, không dùng diffusion/text-to-image.
-Manga dùng nhiều layout panel bất đối xứng, panel-local scan/screentone noise và procedural panel art như nhân vật, cảnh nền, vật thể, dáng hành động được đặt tránh bubble text; game dùng nhiều scene style như dialogue screenshot, floating nameplates, crafting/menu và HUD overlay.
+Manga dùng nhiều layout panel bất đối xứng, panel-local scan/screentone noise, color clutter và procedural panel art như nhân vật, cảnh nền, vật thể, dáng hành động được đặt tránh bubble text; game dùng nhiều scene style như dialogue screenshot, floating nameplates, crafting/menu, battle arena, vendor shop, map screen, party status và HUD overlay.
 
 ## 5. Dùng Gemini Hoặc Groq
 
